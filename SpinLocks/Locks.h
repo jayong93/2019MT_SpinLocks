@@ -132,3 +132,44 @@ private:
 	thread_local static std::atomic_bool* my_node;
 	std::atomic_uintptr_t tail;
 };
+
+class MCSLock {
+public:
+	MCSLock(int _ = 0) : tail{ (uintptr_t)nullptr } {}
+	~MCSLock()
+	{
+		auto ptr = (QNode*)tail.load();
+		if (ptr != nullptr)
+			delete ptr;
+	}
+	void lock() {
+		auto qnode = my_node;
+		auto pred = (QNode*)tail.exchange((uintptr_t)qnode);
+		if (pred != nullptr) {
+			qnode->locked.store(true);
+			pred->next = qnode;
+			while (qnode->locked.load()) {}
+		}
+	}
+
+	void unlock() {
+		auto qnode = my_node;
+		if (qnode->next == nullptr) {
+			auto cur_tail = qnode;
+			if (tail.compare_exchange_strong((uintptr_t&)cur_tail, (uintptr_t)nullptr)) {
+				return;
+			}
+			while (qnode->next == nullptr) {}
+		}
+		qnode->next->locked.store(false);
+		qnode->next = nullptr;
+	}
+
+private:
+	struct QNode {
+		std::atomic_bool locked{ false };
+		QNode* volatile next{ nullptr };
+	};
+	thread_local static QNode* my_node;
+	std::atomic_uintptr_t tail;
+};

@@ -2,7 +2,7 @@
 #include <vector>
 #include "Locks.h"
 
-using Lock = CLHLock;
+using Lock = MCSLock;
 
 volatile int sum = 0;
 
