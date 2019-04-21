@@ -28,25 +28,24 @@ public:
 
 private:
 	std::atomic_bool state{ false };
-	static constexpr int MAX_DELAY = 4000;
+	static constexpr int MAX_DELAY = 400;
 	static constexpr int MIN_DELAY = 50;
 
 	class BackOff {
 	public:
-		BackOff(int min, int max) : limit{ min }, dist{ 0, limit }, max_delay{ max } { }
+		BackOff(int min, int max) : limit{ min }, max_delay{ max } { }
 
 		void back_off() {
-			int delay = dist(re);
+			int delay = dist(re) % limit;
 			limit = std::min(max_delay, limit * 2);
-			dist = std::uniform_int_distribution<int>{ 0, limit };
 			std::chrono::milliseconds sleep_time{ delay };
 			std::this_thread::sleep_for(sleep_time);
 		}
 	private:
 		int max_delay, limit;
-		std::random_device rd;
-		std::default_random_engine re{ rd() };
-		std::uniform_int_distribution<int> dist;
+		thread_local static std::random_device rd;
+		thread_local static std::default_random_engine re;
+		thread_local static std::uniform_int_distribution<unsigned int> dist;
 	};
 };
 
