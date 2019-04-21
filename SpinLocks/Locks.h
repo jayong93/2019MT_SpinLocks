@@ -8,7 +8,7 @@
 
 class BackOffLock {
 public:
-	BackOffLock(int _=0) {}
+	BackOffLock(int _ = 0) {}
 	void lock() {
 		BackOff backoff{ MIN_DELAY, MAX_DELAY };
 		while (true) {
@@ -45,7 +45,7 @@ private:
 	private:
 		int max_delay, limit;
 		std::random_device rd;
-		std::default_random_engine re{rd()};
+		std::default_random_engine re{ rd() };
 		std::uniform_int_distribution<int> dist;
 	};
 };
@@ -69,7 +69,7 @@ public:
 		flags[slot] = false;
 		flags[(slot + 1) % size] = true;
 	}
-	
+
 private:
 	thread_local static int my_index;
 	std::atomic_int tail{ 0 };
@@ -79,7 +79,7 @@ private:
 
 class ArrayPaddingLock {
 public:
-	ArrayPaddingLock(int capacity) : size{ capacity }, flags{ new bool[size*64] } {
+	ArrayPaddingLock(int capacity) : size{ capacity }, flags{ new bool[size * 64] } {
 		flags[0] = true;
 		my_index = 0;
 	}
@@ -89,17 +89,46 @@ public:
 	void lock() {
 		int slot = tail.fetch_add(1) % size;
 		my_index = slot;
-		while (!flags[slot*64]) {}
+		while (!flags[slot * 64]) {}
 	}
 	void unlock() {
 		int slot = my_index;
-		flags[slot*64] = false;
-		flags[((slot + 1) % size)*64] = true;
+		flags[slot * 64] = false;
+		flags[((slot + 1) % size) * 64] = true;
 	}
-	
+
 private:
 	thread_local static int my_index;
 	std::atomic_int tail{ 0 };
 	volatile bool* flags;
 	int size;
+};
+
+class CLHLock {
+public:
+	CLHLock(int _ = 0) : tail{ (uintptr_t)new std::atomic_bool{false} } {}
+	~CLHLock()
+	{
+		auto ptr = (std::atomic_bool*)tail.load();
+		if (ptr != nullptr)
+			delete ptr;
+	}
+	void lock() {
+		auto qnode = my_node;
+		qnode->store(true);
+		std::atomic_bool* pred = (std::atomic_bool*)tail.exchange((uintptr_t)qnode);
+		my_pred = pred;
+		while (pred->load()) {}
+	}
+
+	void unlock() {
+		auto qnode = my_node;
+		qnode->store(false);
+		my_node = my_pred;
+	}
+
+private:
+	thread_local static std::atomic_bool* my_pred;
+	thread_local static std::atomic_bool* my_node;
+	std::atomic_uintptr_t tail;
 };

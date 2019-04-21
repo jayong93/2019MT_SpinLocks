@@ -2,7 +2,7 @@
 #include <vector>
 #include "Locks.h"
 
-using Lock = ArrayPaddingLock;
+using Lock = CLHLock;
 
 volatile int sum = 0;
 
