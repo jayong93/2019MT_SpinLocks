@@ -2,7 +2,7 @@
 #include <vector>
 #include "Locks.h"
 
-using Lock = BackOffLock;
+using Lock = TOLock;
 
 volatile int sum = 0;
 
@@ -17,7 +17,7 @@ int main()
 		{
 			thread_vec.emplace_back([i, &lock]() {
 				for (auto k = 0; k < 50000000 / i; ++k) {
-					lock.lock();
+					while (!lock.try_lock(500));
 					sum += 2;
 					lock.unlock();
 				}

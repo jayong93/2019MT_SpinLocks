@@ -135,12 +135,6 @@ private:
 class MCSLock {
 public:
 	MCSLock(int _ = 0) : tail{ (uintptr_t)nullptr } {}
-	~MCSLock()
-	{
-		auto ptr = (QNode*)tail.load();
-		if (ptr != nullptr)
-			delete ptr;
-	}
 	void lock() {
 		auto qnode = my_node;
 		auto pred = (QNode*)tail.exchange((uintptr_t)qnode);
@@ -170,5 +164,46 @@ private:
 		QNode* volatile next{ nullptr };
 	};
 	thread_local static QNode* my_node;
+	std::atomic_uintptr_t tail;
+};
+
+class TOLock {
+public:
+	TOLock(int _ = 0) : tail{ (uintptr_t)nullptr } {}
+
+	bool try_lock(unsigned int timeout_milli) {
+		auto start = std::chrono::high_resolution_clock::now();
+		QNode* qnode = new QNode;
+		my_node = qnode;
+		qnode->pred = nullptr;
+		auto my_pred = (QNode*)tail.exchange((uintptr_t)qnode);
+		if (my_pred == nullptr || my_pred->pred == AVAILABLE)
+			return true;
+		while (true) {
+			auto end = std::chrono::high_resolution_clock::now();
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() >= timeout_milli) break;
+			QNode* pred_pred = my_pred->pred;
+			if (pred_pred == AVAILABLE) return true;
+			else if (pred_pred != nullptr) my_pred = pred_pred;
+		}
+		auto cur_tail = qnode;
+		if (!tail.compare_exchange_strong((uintptr_t&)cur_tail, (uintptr_t)my_pred))
+			qnode->pred = my_pred;
+		return false;
+	}
+
+	void unlock() {
+		QNode* qnode = my_node;
+		auto cur_tail = qnode;
+		if (!tail.compare_exchange_strong((uintptr_t&)cur_tail, (uintptr_t)nullptr))
+			qnode->pred = AVAILABLE;
+	}
+
+private:
+	struct QNode {
+		QNode* volatile pred{ nullptr };
+	};
+	thread_local static QNode* my_node;
+	static QNode* const AVAILABLE;
 	std::atomic_uintptr_t tail;
 };
